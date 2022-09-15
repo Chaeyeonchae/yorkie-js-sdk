@@ -48,16 +48,18 @@ import {
 import type { Indexable } from '@yorkie-js-sdk/src/document/document';
 
 /**
- * `ClientStatus` is client status types
+ * `ClientStatus` represents the status of the client.
  * @public
  */
 export enum ClientStatus {
   /**
-   * client deactivated status
+   * Deactivated means that the client is not registered to the server.
    */
   Deactivated = 'deactivated',
+
   /**
-   * client activated status
+   * Activated means that the client is registered to the server.
+   * So, the client can sync documents with the server.
    */
   Activated = 'activated',
 }

@@ -16,19 +16,22 @@
 
 import { logger } from '@yorkie-js-sdk/src/util/logger';
 import { TimeTicket } from '@yorkie-js-sdk/src/document/time/ticket';
-import { JSONRoot } from '@yorkie-js-sdk/src/document/json/root';
-import { RGATreeSplitNodePos } from '@yorkie-js-sdk/src/document/json/rga_tree_split';
-import { PlainTextInternal } from '@yorkie-js-sdk/src/document/json/plain_text';
+import { CRDTRoot } from '@yorkie-js-sdk/src/document/crdt/root';
+import { RGATreeSplitNodePos } from '@yorkie-js-sdk/src/document/crdt/rga_tree_split';
+import { CRDTText } from '@yorkie-js-sdk/src/document/crdt/text';
 import { Operation } from '@yorkie-js-sdk/src/document/operation/operation';
+import { Indexable } from '../document';
 
 /**
- * `EditOperation` is an operation representing editing Text.
+ * `EditOperation` is an operation representing editing Text. Most of the same as
+ * Edit, but with additional style properties, attributes.
  */
 export class EditOperation extends Operation {
   private fromPos: RGATreeSplitNodePos;
   private toPos: RGATreeSplitNodePos;
   private maxCreatedAtMapByActor: Map<string, TimeTicket>;
   private content: string;
+  private attributes: Map<string, string>;
 
   constructor(
     parentCreatedAt: TimeTicket,
@@ -36,6 +39,7 @@ export class EditOperation extends Operation {
     toPos: RGATreeSplitNodePos,
     maxCreatedAtMapByActor: Map<string, TimeTicket>,
     content: string,
+    attributes: Map<string, string>,
     executedAt: TimeTicket,
   ) {
     super(parentCreatedAt, executedAt);
@@ -43,6 +47,7 @@ export class EditOperation extends Operation {
     this.toPos = toPos;
     this.maxCreatedAtMapByActor = maxCreatedAtMapByActor;
     this.content = content;
+    this.attributes = attributes;
   }
 
   /**
@@ -54,6 +59,7 @@ export class EditOperation extends Operation {
     toPos: RGATreeSplitNodePos,
     maxCreatedAtMapByActor: Map<string, TimeTicket>,
     content: string,
+    attributes: Map<string, string>,
     executedAt: TimeTicket,
   ): EditOperation {
     return new EditOperation(
@@ -62,21 +68,23 @@ export class EditOperation extends Operation {
       toPos,
       maxCreatedAtMapByActor,
       content,
+      attributes,
       executedAt,
     );
   }
 
   /**
-   * `execute` executes this operation on the given document(`root`).
+   * `execute` executes this operation on the given `CRDTRoot`.
    */
-  public execute(root: JSONRoot): void {
+  public execute<A extends Indexable>(root: CRDTRoot): void {
     const parentObject = root.findByCreatedAt(this.getParentCreatedAt());
-    if (parentObject instanceof PlainTextInternal) {
-      const text = parentObject as PlainTextInternal;
-      text.editInternal(
+    if (parentObject instanceof CRDTText) {
+      const text = parentObject as CRDTText<A>;
+      text.edit(
         [this.fromPos, this.toPos],
         this.content,
         this.getExecutedAt(),
+        Object.fromEntries(this.attributes),
         this.maxCreatedAtMapByActor,
       );
       if (!this.fromPos.equals(this.toPos)) {
@@ -87,24 +95,24 @@ export class EditOperation extends Operation {
         logger.fatal(`fail to find ${this.getParentCreatedAt()}`);
       }
 
-      logger.fatal(`fail to execute, only PlainText can execute edit`);
+      logger.fatal(`fail to execute, only Text can execute edit`);
     }
   }
 
   /**
-   * `getEffectedCreatedAt` returns the time of the effected element.
+   * `getEffectedCreatedAt` returns the creation time of the effected element.
    */
   public getEffectedCreatedAt(): TimeTicket {
     return this.getParentCreatedAt();
   }
 
   /**
-   * `getAnnotatedString` returns a string containing the meta data.
+   * `getStructureAsString` returns a string containing the meta data.
    */
-  public getAnnotatedString(): string {
-    const parent = this.getParentCreatedAt().getAnnotatedString();
-    const fromPos = this.fromPos.getAnnotatedString();
-    const toPos = this.toPos.getAnnotatedString();
+  public getStructureAsString(): string {
+    const parent = this.getParentCreatedAt().getStructureAsString();
+    const fromPos = this.fromPos.getStructureAsString();
+    const toPos = this.toPos.getStructureAsString();
     const content = this.content;
     return `${parent}.EDIT(${fromPos},${toPos},${content})`;
   }
@@ -128,6 +136,13 @@ export class EditOperation extends Operation {
    */
   public getContent(): string {
     return this.content;
+  }
+
+  /**
+   * `getAttributes` returns the attributes of this Edit.
+   */
+  public getAttributes(): Map<string, string> {
+    return this.attributes || new Map();
   }
 
   /**

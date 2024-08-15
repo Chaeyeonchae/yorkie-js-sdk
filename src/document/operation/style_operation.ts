@@ -16,13 +16,14 @@
 
 import { logger } from '@yorkie-js-sdk/src/util/logger';
 import { TimeTicket } from '@yorkie-js-sdk/src/document/time/ticket';
-import { JSONRoot } from '@yorkie-js-sdk/src/document/json/root';
-import { RGATreeSplitNodePos } from '@yorkie-js-sdk/src/document/json/rga_tree_split';
-import { RichTextInternal } from '@yorkie-js-sdk/src/document/json/rich_text';
+import { CRDTRoot } from '@yorkie-js-sdk/src/document/crdt/root';
+import { RGATreeSplitNodePos } from '@yorkie-js-sdk/src/document/crdt/rga_tree_split';
+import { CRDTText } from '@yorkie-js-sdk/src/document/crdt/text';
 import { Operation } from '@yorkie-js-sdk/src/document/operation/operation';
+import { Indexable } from '../document';
 
 /**
- *  `StyleOperation` is an operation applies the style of the given range to RichText.
+ *  `StyleOperation` is an operation applies the style of the given range to Text.
  */
 export class StyleOperation extends Operation {
   private fromPos: RGATreeSplitNodePos;
@@ -62,13 +63,13 @@ export class StyleOperation extends Operation {
   }
 
   /**
-   * `execute` executes this operation on the given document(`root`).
+   * `execute` executes this operation on the given `CRDTRoot`.
    */
-  public execute(root: JSONRoot): void {
+  public execute<A extends Indexable>(root: CRDTRoot): void {
     const parentObject = root.findByCreatedAt(this.getParentCreatedAt());
-    if (parentObject instanceof RichTextInternal) {
-      const text = parentObject as RichTextInternal;
-      text.setStyleInternal(
+    if (parentObject instanceof CRDTText) {
+      const text = parentObject as CRDTText<A>;
+      text.setStyle(
         [this.fromPos, this.toPos],
         this.attributes ? Object.fromEntries(this.attributes) : {},
         this.getExecutedAt(),
@@ -78,24 +79,24 @@ export class StyleOperation extends Operation {
         logger.fatal(`fail to find ${this.getParentCreatedAt()}`);
       }
 
-      logger.fatal(`fail to execute, only PlainText can execute edit`);
+      logger.fatal(`fail to execute, only Text can execute edit`);
     }
   }
 
   /**
-   * `getEffectedCreatedAt` returns the time of the effected element.
+   * `getEffectedCreatedAt` returns the creation time of the effected element.
    */
   public getEffectedCreatedAt(): TimeTicket {
     return this.getParentCreatedAt();
   }
 
   /**
-   * `getAnnotatedString` returns a string containing the meta data.
+   * `getStructureAsString` returns a string containing the meta data.
    */
-  public getAnnotatedString(): string {
-    const parent = this.getParentCreatedAt().getAnnotatedString();
-    const fromPos = this.fromPos.getAnnotatedString();
-    const toPos = this.toPos.getAnnotatedString();
+  public getStructureAsString(): string {
+    const parent = this.getParentCreatedAt().getStructureAsString();
+    const fromPos = this.fromPos.getStructureAsString();
+    const toPos = this.toPos.getStructureAsString();
     const attributes = this.attributes;
     return `${parent}.STYL(${fromPos},${toPos},${JSON.stringify(attributes)})`;
   }

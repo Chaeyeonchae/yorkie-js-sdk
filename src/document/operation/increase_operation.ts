@@ -16,22 +16,22 @@
 
 import { Operation } from '@yorkie-js-sdk/src/document/operation/operation';
 import { TimeTicket } from '@yorkie-js-sdk/src/document/time/ticket';
-import { JSONElement } from '@yorkie-js-sdk/src/document/json/element';
-import { JSONRoot } from '@yorkie-js-sdk/src/document/json/root';
-import { JSONPrimitive } from '@yorkie-js-sdk/src/document/json/primitive';
+import { CRDTElement } from '@yorkie-js-sdk/src/document/crdt/element';
+import { CRDTRoot } from '@yorkie-js-sdk/src/document/crdt/root';
+import { Primitive } from '@yorkie-js-sdk/src/document/crdt/primitive';
 import { logger } from '@yorkie-js-sdk/src/util/logger';
-import { CounterInternal } from '@yorkie-js-sdk/src/document/json/counter';
+import { CRDTCounter } from '@yorkie-js-sdk/src/document/crdt/counter';
 
 /**
  * `IncreaseOperation` represents an operation that increments a numeric value to Counter.
- * Among Primitives, numeric types Integer, Long, and Double are used as values.
+ * Among Primitives, numeric types Integer, Long are used as values.
  */
 export class IncreaseOperation extends Operation {
-  private value: JSONElement;
+  private value: CRDTElement;
 
   constructor(
     parentCreatedAt: TimeTicket,
-    value: JSONElement,
+    value: CRDTElement,
     executedAt: TimeTicket,
   ) {
     super(parentCreatedAt, executedAt);
@@ -43,20 +43,20 @@ export class IncreaseOperation extends Operation {
    */
   public static create(
     parentCreatedAt: TimeTicket,
-    value: JSONElement,
+    value: CRDTElement,
     executedAt: TimeTicket,
   ): IncreaseOperation {
     return new IncreaseOperation(parentCreatedAt, value, executedAt);
   }
 
   /**
-   * `execute` executes this operation on the given document(`root`).
+   * `execute` executes this operation on the given `CRDTRoot`.
    */
-  public execute(root: JSONRoot): void {
+  public execute(root: CRDTRoot): void {
     const parentObject = root.findByCreatedAt(this.getParentCreatedAt());
-    if (parentObject instanceof CounterInternal) {
-      const counter = parentObject as CounterInternal;
-      const value = this.value.deepcopy() as JSONPrimitive;
+    if (parentObject instanceof CRDTCounter) {
+      const counter = parentObject as CRDTCounter;
+      const value = this.value.deepcopy() as Primitive;
       counter.increase(value);
     } else {
       if (!parentObject) {
@@ -68,23 +68,23 @@ export class IncreaseOperation extends Operation {
   }
 
   /**
-   * `getEffectedCreatedAt` returns the time of the effected element.
+   * `getEffectedCreatedAt` returns the creation time of the effected element.
    */
   public getEffectedCreatedAt(): TimeTicket {
     return this.getParentCreatedAt();
   }
 
   /**
-   * `getAnnotatedString` returns a string containing the meta data.
+   * `getStructureAsString` returns a string containing the meta data.
    */
-  public getAnnotatedString(): string {
-    return `${this.getParentCreatedAt().getAnnotatedString()}.INCREASE`;
+  public getStructureAsString(): string {
+    return `${this.getParentCreatedAt().getStructureAsString()}.INCREASE`;
   }
 
   /**
    * `getValue` returns the value of this operation.
    */
-  public getValue(): JSONElement {
+  public getValue(): CRDTElement {
     return this.value;
   }
 }

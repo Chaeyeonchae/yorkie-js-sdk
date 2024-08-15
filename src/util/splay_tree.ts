@@ -84,10 +84,10 @@ export abstract class SplayNode<V> {
   }
 
   /**
-   * `setRight` sets a right node.
+   * `getParent` returns parent of this node.
    */
-  public setRight(right?: SplayNode<V>): void {
-    this.right = right;
+  public getParent(): SplayNode<V> | undefined {
+    return this.parent;
   }
 
   /**
@@ -112,13 +112,6 @@ export abstract class SplayNode<V> {
   }
 
   /**
-   * `setParent` sets a parent node.
-   */
-  public setParent(parent?: SplayNode<V>): void {
-    this.parent = parent;
-  }
-
-  /**
    * `setLeft` sets a left node.
    */
   public setLeft(left?: SplayNode<V>): void {
@@ -126,10 +119,17 @@ export abstract class SplayNode<V> {
   }
 
   /**
-   * `getParent` returns parent of this node.
+   * `setRight` sets a right node.
    */
-  public getParent(): SplayNode<V> | undefined {
-    return this.parent;
+  public setRight(right?: SplayNode<V>): void {
+    this.right = right;
+  }
+
+  /**
+   * `setParent` sets a parent node.
+   */
+  public setParent(parent?: SplayNode<V>): void {
+    this.parent = parent;
   }
 
   /**
@@ -156,7 +156,7 @@ export abstract class SplayNode<V> {
   }
 
   /**
-   * `initWeight` set initial weight of this node.
+   * `initWeight` sets initial weight of this node.
    */
   public initWeight(): void {
     this.weight = this.getLength();
@@ -176,10 +176,17 @@ export class SplayTree<V> {
   }
 
   /**
+   * `length` returns the size of this tree.
+   */
+  public get length(): number {
+    return this.root ? this.root.getWeight() : 0;
+  }
+
+  /**
    * `find` returns the Node and offset of the given index.
    */
   public find(pos: number): [SplayNode<V> | undefined, number] {
-    if (!this.root) {
+    if (!this.root || pos < 0) {
       return [undefined, 0];
     }
 
@@ -213,7 +220,7 @@ export class SplayTree<V> {
    * @returns the index of given node
    */
   public indexOf(node: SplayNode<V>): number {
-    if (!node || !node.hasLinks()) {
+    if (!node || (node !== this.root && !node.hasLinks())) {
       return -1;
     }
 
@@ -243,16 +250,17 @@ export class SplayTree<V> {
    * `insert` inserts the node at the last.
    */
   public insert(newNode: SplayNode<V>): SplayNode<V> {
-    return this.insertAfter(this.root!, newNode);
+    return this.insertAfter(this.root, newNode);
   }
 
   /**
    * `insertAfter` inserts the node after the given previous node.
    */
   public insertAfter(
-    target: SplayNode<V>,
+    target: SplayNode<V> | undefined,
     newNode: SplayNode<V>,
   ): SplayNode<V> {
+    // TODO(Eithea): Consider moving the code below to insert()
     if (!target) {
       this.root = newNode;
       return newNode;
@@ -267,16 +275,16 @@ export class SplayTree<V> {
     newNode.setLeft(target);
     target.setParent(newNode);
     target.setRight();
-    this.updateSubtree(target);
-    this.updateSubtree(newNode);
+    this.updateWeight(target);
+    this.updateWeight(newNode);
 
     return newNode;
   }
 
   /**
-   * `updateSubtree` recalculates weights with left and right nodes.
+   * `updateWeight` recalculates the weight of this node with the value and children.
    */
-  public updateSubtree(node: SplayNode<V>): void {
+  public updateWeight(node: SplayNode<V>): void {
     node.initWeight();
 
     if (node.hasLeft()) {
@@ -287,10 +295,17 @@ export class SplayTree<V> {
     }
   }
 
+  private updateTreeWeight(node: SplayNode<V>): void {
+    while (node) {
+      this.updateWeight(node);
+      node = node.getParent()!;
+    }
+  }
+
   /**
    * `splayNode` moves the given node to the root.
    */
-  public splayNode(node: SplayNode<V>): void {
+  public splayNode(node: SplayNode<V> | undefined): void {
     if (!node) {
       return;
     }
@@ -325,6 +340,7 @@ export class SplayTree<V> {
         } else if (this.isRightChild(node)) {
           this.rotateLeft(node);
         }
+        this.updateWeight(node);
         return;
       }
     }
@@ -347,8 +363,8 @@ export class SplayTree<V> {
     }
 
     if (leftTree.root) {
-      const maxNode = leftTree.getMaximum();
-      leftTree.splayNode(maxNode);
+      const rightmostNode = leftTree.getRightmost();
+      leftTree.splayNode(rightmostNode);
       leftTree.root.setRight(rightTree.root);
       if (rightTree.root) {
         rightTree.root.setParent(leftTree.root);
@@ -360,15 +376,49 @@ export class SplayTree<V> {
 
     node.unlink();
     if (this.root) {
-      this.updateSubtree(this.root);
+      this.updateWeight(this.root);
     }
   }
 
   /**
-   * `getAnnotatedString` returns a string containing the meta data of the Node
+   * `deleteRange` separates the range between given 2 boundaries from this Tree.
+   * This function separates the range to delete as a subtree
+   * by splaying outer boundary nodes.
+   * leftBoundary must exist because of 0-indexed initial dummy node of tree,
+   * but rightBoundary can be nil means range to delete includes the end of tree.
+   * Refer to the design document in https://github.com/yorkie-team/yorkie/tree/main/design
+   */
+  public deleteRange(
+    leftBoundary: SplayNode<V>,
+    rightBoundary: SplayNode<V> | undefined,
+  ): void {
+    if (!rightBoundary) {
+      this.splayNode(leftBoundary);
+      this.cutOffRight(leftBoundary);
+      return;
+    }
+    this.splayNode(leftBoundary);
+    this.splayNode(rightBoundary);
+    if (rightBoundary.getLeft() != leftBoundary) {
+      this.rotateRight(leftBoundary);
+    }
+    this.cutOffRight(leftBoundary);
+  }
+
+  private cutOffRight(root: SplayNode<V>): void {
+    const nodesToFreeWeight: Array<SplayNode<V>> = [];
+    this.traversePostorder(root.getRight(), nodesToFreeWeight);
+    for (const node of nodesToFreeWeight) {
+      node.initWeight();
+    }
+    this.updateTreeWeight(root);
+  }
+
+  /**
+   * `getStructureAsString` returns a string containing the meta data of the Node
    * for debugging purpose.
    */
-  public getAnnotatedString(): string {
+  public getStructureAsString(): string {
     const metaString: Array<SplayNode<V>> = [];
     this.traverseInorder(this.root!, metaString);
     return metaString
@@ -376,7 +426,25 @@ export class SplayTree<V> {
       .join('');
   }
 
-  private getMaximum(): SplayNode<V> {
+  /**
+   * `checkWeight` returns false when there is an incorrect weight node.
+   * for debugging purpose.
+   */
+  public checkWeight(): boolean {
+    const nodes: Array<SplayNode<V>> = [];
+    this.traverseInorder(this.root!, nodes);
+    for (const node of nodes) {
+      if (
+        node.getWeight() !=
+        node.getLength() + node.getLeftWeight() + node.getRightWeight()
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private getRightmost(): SplayNode<V> {
     let node = this.root!;
     while (node.hasRight()) {
       node = node.getRight()!;
@@ -395,6 +463,19 @@ export class SplayTree<V> {
     this.traverseInorder(node.getLeft(), stack);
     stack.push(node);
     this.traverseInorder(node.getRight(), stack);
+  }
+
+  private traversePostorder(
+    node: SplayNode<V> | undefined,
+    stack: Array<SplayNode<V>>,
+  ): void {
+    if (!node) {
+      return;
+    }
+
+    this.traversePostorder(node.getLeft(), stack);
+    this.traversePostorder(node.getRight(), stack);
+    stack.push(node);
   }
 
   private rotateLeft(pivot: SplayNode<V>): void {
@@ -418,8 +499,8 @@ export class SplayTree<V> {
     pivot.setLeft(root);
     pivot.getLeft()!.setParent(pivot);
 
-    this.updateSubtree(root);
-    this.updateSubtree(pivot);
+    this.updateWeight(root);
+    this.updateWeight(pivot);
   }
 
   private rotateRight(pivot: SplayNode<V>): void {
@@ -443,8 +524,8 @@ export class SplayTree<V> {
     pivot.setRight(root);
     pivot.getRight()!.setParent(pivot);
 
-    this.updateSubtree(root);
-    this.updateSubtree(pivot);
+    this.updateWeight(root);
+    this.updateWeight(pivot);
   }
 
   private isLeftChild(node?: SplayNode<V>): boolean {

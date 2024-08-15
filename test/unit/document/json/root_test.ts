@@ -1,28 +1,30 @@
 import { assert } from 'chai';
 import { InitialChangeID } from '@yorkie-js-sdk/src/document/change/change_id';
-import { JSONRoot } from '@yorkie-js-sdk/src/document/json/root';
-import { ObjectInternal } from '@yorkie-js-sdk/src/document/json/object';
-import { RHTPQMap } from '@yorkie-js-sdk/src/document/json/rht_pq_map';
+import { CRDTRoot } from '@yorkie-js-sdk/src/document/crdt/root';
+import { CRDTObject } from '@yorkie-js-sdk/src/document/crdt/object';
+import { ElementRHT } from '@yorkie-js-sdk/src/document/crdt/element_rht';
 import { ChangeContext } from '@yorkie-js-sdk/src/document/change/context';
-import { ObjectProxy } from '@yorkie-js-sdk/src/document/proxy/object_proxy';
-import { ArrayProxy } from '@yorkie-js-sdk/src/document/proxy/array_proxy';
+import { ArrayProxy } from '@yorkie-js-sdk/src/document/json/array';
 import { InitialTimeTicket } from '@yorkie-js-sdk/src/document/time/ticket';
 import { MaxTimeTicket } from '@yorkie-js-sdk/src/document/time/ticket';
-import { RGATreeList } from '@yorkie-js-sdk/src/document/json/rga_tree_list';
-import { JSONPrimitive } from '@yorkie-js-sdk/src/document/json/primitive';
-import { ArrayInternal } from '@yorkie-js-sdk/src/document/json/array';
+import { RGATreeList } from '@yorkie-js-sdk/src/document/crdt/rga_tree_list';
+import { Primitive } from '@yorkie-js-sdk/src/document/crdt/primitive';
+import { CRDTArray } from '@yorkie-js-sdk/src/document/crdt/array';
+import { CRDTText } from '@yorkie-js-sdk/src/document/crdt/text';
+import { RGATreeSplit } from '@yorkie-js-sdk/src/document/crdt/rga_tree_split';
+import { Text } from '@yorkie-js-sdk/src/yorkie';
 
 describe('ROOT', function () {
   it('basic test', function () {
-    const root = new JSONRoot(
-      new ObjectInternal(InitialTimeTicket, RHTPQMap.create()),
+    const root = new CRDTRoot(
+      new CRDTObject(InitialTimeTicket, ElementRHT.create()),
     );
     const cc = ChangeContext.create(InitialChangeID, root);
     assert.isUndefined(root.findByCreatedAt(MaxTimeTicket));
-    assert.isUndefined(root.createPath(MaxTimeTicket));
+    assert.equal(root.createPath(MaxTimeTicket), '');
 
     // set '$.k1'
-    const k1 = JSONPrimitive.of('k1', cc.issueTimeTicket());
+    const k1 = Primitive.of('k1', cc.issueTimeTicket());
     root.getObject().set('k1', k1);
     root.registerElement(k1, root.getObject());
     assert.equal(root.getElementMapSize(), 2);
@@ -37,7 +39,7 @@ describe('ROOT', function () {
     assert.isUndefined(root.findByCreatedAt(k1.getCreatedAt()));
 
     // set '$.k2'
-    const k2 = ObjectInternal.create(cc.issueTimeTicket());
+    const k2 = CRDTObject.create(cc.issueTimeTicket());
     root.getObject().set('k2', k2);
     root.registerElement(k2, root.getObject());
     assert.equal(root.getElementMapSize(), 2);
@@ -47,35 +49,35 @@ describe('ROOT', function () {
     assert.equal(Object.keys(k2.toJS()).length, 0);
 
     // set '$.k2.1'
-    const k2_1 = ArrayInternal.create(cc.issueTimeTicket());
-    k2.set('1', k2_1);
-    root.registerElement(k2_1, k2);
+    const k2Dot1 = CRDTArray.create(cc.issueTimeTicket());
+    k2.set('1', k2Dot1);
+    root.registerElement(k2Dot1, k2);
     assert.equal(root.getElementMapSize(), 3);
-    assert.equal(root.findByCreatedAt(k2_1.getCreatedAt()), k2_1);
-    assert.equal(root.createPath(k2_1.getCreatedAt()), '$.k2.1');
+    assert.equal(root.findByCreatedAt(k2Dot1.getCreatedAt()), k2Dot1);
+    assert.equal(root.createPath(k2Dot1.getCreatedAt()), '$.k2.1');
 
     // set '$.k2.1.0'
-    const k2_1_0 = JSONPrimitive.of('0', cc.issueTimeTicket());
-    k2_1.insertAfter(k2_1.getLastCreatedAt(), k2_1_0);
-    root.registerElement(k2_1_0, k2_1);
+    const k2Dot1Dot0 = Primitive.of('0', cc.issueTimeTicket());
+    k2Dot1.insertAfter(k2Dot1.getLastCreatedAt(), k2Dot1Dot0);
+    root.registerElement(k2Dot1Dot0, k2Dot1);
     assert.equal(root.getElementMapSize(), 4);
-    assert.equal(root.findByCreatedAt(k2_1_0.getCreatedAt()), k2_1_0);
-    assert.equal(root.createPath(k2_1_0.getCreatedAt()), '$.k2.1.0');
+    assert.equal(root.findByCreatedAt(k2Dot1Dot0.getCreatedAt()), k2Dot1Dot0);
+    assert.equal(root.createPath(k2Dot1Dot0.getCreatedAt()), '$.k2.1.0');
 
     // set '$.k2.1.1'
-    const k2_1_1 = JSONPrimitive.of('1', cc.issueTimeTicket());
-    k2_1.insertAfter(k2_1_0.getCreatedAt(), k2_1_1);
-    root.registerElement(k2_1_1, k2_1);
+    const k2dot1dot1 = Primitive.of('1', cc.issueTimeTicket());
+    k2Dot1.insertAfter(k2Dot1Dot0.getCreatedAt(), k2dot1dot1);
+    root.registerElement(k2dot1dot1, k2Dot1);
     assert.equal(root.getElementMapSize(), 5);
-    assert.equal(root.findByCreatedAt(k2_1_1.getCreatedAt()), k2_1_1);
-    assert.equal(root.createPath(k2_1_1.getCreatedAt()), '$.k2.1.1');
+    assert.equal(root.findByCreatedAt(k2dot1dot1.getCreatedAt()), k2dot1dot1);
+    assert.equal(root.createPath(k2dot1dot1.getCreatedAt()), '$.k2.1.1');
   });
 
   it('garbage collection test for array', function () {
-    const root = new JSONRoot(
-      new ObjectInternal(InitialTimeTicket, RHTPQMap.create()),
+    const root = new CRDTRoot(
+      new CRDTObject(InitialTimeTicket, ElementRHT.create()),
     );
-    const arr = new ArrayInternal(InitialTimeTicket, RGATreeList.create());
+    const arr = new CRDTArray(InitialTimeTicket, RGATreeList.create());
     const change = ChangeContext.create(InitialChangeID, root);
 
     ArrayProxy.pushInternal(change, arr, 0);
@@ -103,39 +105,23 @@ describe('ROOT', function () {
   });
 
   it('garbage collection test for text', function () {
-    const root = new JSONRoot(
-      new ObjectInternal(InitialTimeTicket, RHTPQMap.create()),
+    const root = new CRDTRoot(
+      new CRDTObject(InitialTimeTicket, ElementRHT.create()),
     );
-    const obj = new ObjectInternal(InitialTimeTicket, RHTPQMap.create());
+    const obj = new CRDTObject(InitialTimeTicket, ElementRHT.create());
     const change = ChangeContext.create(InitialChangeID, root);
-    const text = ObjectProxy.createText(change, obj, 'k1');
-
-    text.edit(0, 0, 'Hello World');
-    assert.equal(0, root.getGarbageLen());
-
-    text.edit(6, 11, 'Yorkie');
-    assert.equal(1, root.getGarbageLen());
-
-    text.edit(0, 6, '');
-    assert.equal(2, root.getGarbageLen());
-
-    assert.equal(2, root.garbageCollect(MaxTimeTicket));
-    assert.equal('[0:00:0:0 ][0:00:3:0 Yorkie]', text.getAnnotatedString());
-    assert.equal(0, root.getGarbageLen());
-  });
-
-  it('garbage collection test for rich text', function () {
-    const root = new JSONRoot(
-      new ObjectInternal(InitialTimeTicket, RHTPQMap.create()),
+    const crdtText = CRDTText.create(
+      RGATreeSplit.create(),
+      change.issueTimeTicket(),
     );
-    const obj = new ObjectInternal(InitialTimeTicket, RHTPQMap.create());
-    const change = ChangeContext.create(InitialChangeID, root);
-    const text = ObjectProxy.createRichText(change, obj, 'k1');
+    obj.set('k1', crdtText);
+    change.registerElement(crdtText, obj);
+    const text = new Text(change, crdtText);
 
     text.edit(0, 0, 'Hello World');
     assert.equal(
-      '[0:00:0:0 ][0:00:2:0 Hello World][0:00:1:0 \n]',
-      text.getAnnotatedString(),
+      '[0:00:0:0 ][0:00:2:0 Hello World]',
+      text.getStructureAsString(),
     );
     assert.equal(0, root.getGarbageLen());
 
@@ -146,10 +132,7 @@ describe('ROOT', function () {
     assert.equal(2, root.getGarbageLen());
 
     assert.equal(2, root.garbageCollect(MaxTimeTicket));
-    assert.equal(
-      '[0:00:0:0 ][0:00:3:0 Yorkie][0:00:1:0 \n]',
-      text.getAnnotatedString(),
-    );
+    assert.equal('[0:00:0:0 ][0:00:3:0 Yorkie]', text.getStructureAsString());
     assert.equal(0, root.getGarbageLen());
   });
 });

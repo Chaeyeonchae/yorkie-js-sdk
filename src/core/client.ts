@@ -33,14 +33,14 @@ import {
   WatchDocumentsRequest,
   WatchDocumentsResponse,
   UpdatePresenceRequest,
-} from '@yorkie-js-sdk/src/api/yorkie_pb';
-import { DocEventType } from '@yorkie-js-sdk/src/api/resources_pb';
+} from '@yorkie-js-sdk/src/api/yorkie/v1/yorkie_pb';
+import { DocEventType } from '@yorkie-js-sdk/src/api/yorkie/v1/resources_pb';
 import { converter } from '@yorkie-js-sdk/src/api/converter';
-import { YorkieClient as RPCClient } from '@yorkie-js-sdk/src/api/yorkie_grpc_web_pb';
+import { YorkieServiceClient as RPCClient } from '@yorkie-js-sdk/src/api/yorkie/v1/yorkie_grpc_web_pb';
 import { Code, YorkieError } from '@yorkie-js-sdk/src/util/error';
 import { logger } from '@yorkie-js-sdk/src/util/logger';
 import { uuid } from '@yorkie-js-sdk/src/util/uuid';
-import { DocumentReplica } from '@yorkie-js-sdk/src/document/document';
+import { Document, DocumentKey } from '@yorkie-js-sdk/src/document/document';
 import {
   AuthUnaryInterceptor,
   AuthStreamInterceptor,
@@ -48,42 +48,48 @@ import {
 import type { Indexable } from '@yorkie-js-sdk/src/document/document';
 
 /**
- * `ClientStatus` is client status types
+ * `ClientStatus` represents the status of the client.
  * @public
  */
 export enum ClientStatus {
   /**
-   * client deactivated status
+   * `Deactivated` means that the client is not activated. It is the initial
+   * status of the client. If the client is deactivated, all `Document`s of the
+   * client are also not used.
    */
   Deactivated = 'deactivated',
+
   /**
-   * client activated status
+   * `Activated` means that the client is activated. If the client is activated,
+   * all `Document`s of the client are also ready to be used.
    */
   Activated = 'activated',
 }
 
 /**
- * `StreamConnectionStatus` is stream connection status types
+ * `StreamConnectionStatus` represents whether the stream connection between the
+ * client and the server is connected or not.
  * @public
  */
 export enum StreamConnectionStatus {
   /**
-   * stream connected
+   * `Connected` means that the stream connection is connected.
    */
   Connected = 'connected',
   /**
-   * stream disconnected
+   * `Disconnected` means that the stream connection is disconnected.
    */
   Disconnected = 'disconnected',
 }
 
 /**
- * `DocumentSyncResultType` is document sync result types
+ * `DocumentSyncResultType` represents the result of synchronizing the document
+ *  with the server.
  * @public
  */
 export enum DocumentSyncResultType {
   /**
-   * type when Document synced.
+   * type when Document synced successfully.
    */
   Synced = 'synced',
   /**
@@ -93,28 +99,38 @@ export enum DocumentSyncResultType {
 }
 
 /**
- * `ClientEventType` is client event types
+ * `PeersChangedValue` represents the value of the PeersChanged event.
+ * @public
+ */
+export type PeersChangedValue<P> = {
+  type: 'initialized' | 'watched' | 'unwatched' | 'presence-changed';
+  peers: Record<DocumentKey, Array<{ clientID: ActorID; presence: P }>>;
+};
+
+/**
+ * `ClientEventType` represents the type of the event that the client can emit.
  * @public
  */
 export enum ClientEventType {
   /**
-   * client event type when status changed.
+   * `StatusChanged` means that the status of the client has changed.
    */
   StatusChanged = 'status-changed',
   /**
-   * client event type when documents changed.
+   * `DocumentsChanged` means that the documents of the client has changed.
    */
   DocumentsChanged = 'documents-changed',
   /**
-   * client event type when peers changed.
+   * `PeersChanged` means that the presences of the peer clients has changed.
    */
   PeersChanged = 'peers-changed',
   /**
-   * client event type when stream connection changed.
+   * `StreamConnectionStatusChanged` means that the stream connection status of
+   * the client has changed.
    */
   StreamConnectionStatusChanged = 'stream-connection-status-changed',
   /**
-   * client event type when document synced.
+   * `DocumentSynced` means that the document has been synced with the server.
    */
   DocumentSynced = 'document-synced',
 }
@@ -125,10 +141,10 @@ export enum ClientEventType {
  *
  * @public
  */
-export type ClientEvent<M = Indexable> =
+export type ClientEvent<P = Indexable> =
   | StatusChangedEvent
   | DocumentsChangedEvent
-  | PeersChangedEvent<M>
+  | PeersChangedEvent<P>
   | StreamConnectionStatusChangedEvent
   | DocumentSyncedEvent;
 
@@ -178,7 +194,7 @@ export interface DocumentsChangedEvent extends BaseClientEvent {
  *
  * @public
  */
-export interface PeersChangedEvent<M> extends BaseClientEvent {
+export interface PeersChangedEvent<P> extends BaseClientEvent {
   /**
    * enum {@link ClientEventType}.PeersChangedEvent
    */
@@ -186,7 +202,7 @@ export interface PeersChangedEvent<M> extends BaseClientEvent {
   /**
    * `PeersChangedEvent` value
    */
-  value: Record<string, Record<string, M>>;
+  value: PeersChangedValue<P>;
 }
 
 /**
@@ -225,10 +241,10 @@ export interface DocumentSyncedEvent extends BaseClientEvent {
   value: DocumentSyncResultType;
 }
 
-interface Attachment<M> {
-  doc: DocumentReplica<unknown>;
+interface Attachment<P> {
+  doc: Document<unknown>;
   isRealtimeSync: boolean;
-  peerPresenceMap?: Map<string, PresenceInfo<M>>;
+  peerPresenceMap?: Map<ActorID, PresenceInfo<P>>;
   remoteChangeEventReceived?: boolean;
 }
 
@@ -237,9 +253,9 @@ interface Attachment<M> {
  *
  * @public
  */
-export type PresenceInfo<M> = {
+export type PresenceInfo<P> = {
   clock: number;
-  data: M;
+  data: P;
 };
 
 /**
@@ -247,12 +263,44 @@ export type PresenceInfo<M> = {
  *
  * @public
  */
-export interface ClientOptions<M> {
+export interface ClientOptions<P> {
+  /**
+   * `key` is the client key. It is used to identify the client.
+   * If not set, a random key is generated.
+   */
   key?: string;
-  presence?: M;
+
+  /**
+   * `presence` is the presence information of this client. If the client
+   * attaches a document, the presence information is sent to the other peers
+   * attached to the document.
+   */
+  presence?: P;
+
+  /**
+   * `apiKey` is the API key of the project. It is used to identify the project.
+   * If not set, API key of the default project is used.
+   */
   apiKey?: string;
+
+  /**
+   * `token` is the authentication token of this client. It is used to identify
+   * the user of the client.
+   */
   token?: string;
+
+  /**
+   * `syncLoopDuration` is the duration of the sync loop. After each sync loop,
+   * the client waits for the duration to next sync. The default value is
+   * `50`(ms).
+   */
   syncLoopDuration?: number;
+
+  /**
+   * `reconnectStreamDelay` is the delay of the reconnect stream. If the stream
+   * is disconnected, the client waits for the delay to reconnect the stream. The
+   * default value is `1000`(ms).
+   */
   reconnectStreamDelay?: number;
 }
 
@@ -271,28 +319,32 @@ const DefaultClientOptions = {
  *
  * @public
  */
-export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
+export class Client<P = Indexable> implements Observable<ClientEvent<P>> {
   private id?: ActorID;
   private key: string;
-  private presenceInfo: PresenceInfo<M>;
+  private presenceInfo: PresenceInfo<P>;
   private status: ClientStatus;
-  private attachmentMap: Map<string, Attachment<M>>;
+  private attachmentMap: Map<DocumentKey, Attachment<P>>;
   private syncLoopDuration: number;
   private reconnectStreamDelay: number;
 
   private rpcClient: RPCClient;
   private watchLoopTimerID?: ReturnType<typeof setTimeout>;
   private remoteChangeEventStream?: any;
-  private eventStream: Observable<ClientEvent<M>>;
-  private eventStreamObserver!: Observer<ClientEvent<M>>;
+  private eventStream: Observable<ClientEvent<P>>;
+  private eventStreamObserver!: Observer<ClientEvent<P>>;
 
-  constructor(rpcAddr: string, opts?: ClientOptions<M>) {
+  /**
+   * @param rpcAddr - the address of the RPC server.
+   * @param opts - the options of the client.
+   */
+  constructor(rpcAddr: string, opts?: ClientOptions<P>) {
     opts = opts || DefaultClientOptions;
 
     this.key = opts.key ? opts.key : uuid();
     this.presenceInfo = {
       clock: 0,
-      data: opts.presence ? opts.presence : ({} as M),
+      data: opts.presence ? opts.presence : ({} as P),
     };
     this.status = ClientStatus.Deactivated;
     this.attachmentMap = new Map();
@@ -312,13 +364,13 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
     }
 
     this.rpcClient = new RPCClient(rpcAddr, null, rpcOpts);
-    this.eventStream = createObservable<ClientEvent<M>>((observer) => {
+    this.eventStream = createObservable<ClientEvent<P>>((observer) => {
       this.eventStreamObserver = observer;
     });
   }
 
   /**
-   * `ativate` activates this client. That is, it register itself to the server
+   * `ativate` activates this client. That is, it registers itself to the server
    * and receives a unique ID from the server. The given ID is used to
    * distinguish different clients.
    */
@@ -331,7 +383,7 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
       const req = new ActivateClientRequest();
       req.setClientKey(this.key);
 
-      this.rpcClient.activateClient(req, {}, (err, res) => {
+      this.rpcClient.activateClient(req, {}, async (err, res) => {
         if (err) {
           logger.error(`[AC] c:"${this.getKey()}" err :`, err);
           reject(err);
@@ -341,7 +393,6 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
         this.id = converter.toHexString(res.getClientId_asU8());
         this.status = ClientStatus.Activated;
         this.runSyncLoop();
-        this.runWatchLoop();
 
         this.eventStreamObserver.next({
           type: ClientEventType.StatusChanged,
@@ -363,8 +414,7 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
     }
 
     if (this.remoteChangeEventStream) {
-      this.remoteChangeEventStream.cancel();
-      this.remoteChangeEventStream = undefined;
+      this.disconnectWatchStream();
     }
 
     return new Promise((resolve, reject) => {
@@ -395,9 +445,9 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
    * this client will synchronize the given document.
    */
   public attach(
-    doc: DocumentReplica<unknown>,
+    doc: Document<unknown>,
     isManualSync?: boolean,
-  ): Promise<DocumentReplica<unknown>> {
+  ): Promise<Document<unknown>> {
     if (!this.isActive()) {
       throw new YorkieError(Code.ClientNotActive, `${this.key} is not active`);
     }
@@ -409,7 +459,7 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
       req.setClientId(converter.toUint8Array(this.id!));
       req.setChangePack(converter.toChangePack(doc.createChangePack()));
 
-      this.rpcClient.attachDocument(req, {}, (err, res) => {
+      this.rpcClient.attachDocument(req, {}, async (err, res) => {
         if (err) {
           logger.error(`[AD] c:"${this.getKey()}" err :`, err);
           reject(err);
@@ -424,7 +474,7 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
           isRealtimeSync: !isManualSync,
           peerPresenceMap: new Map(),
         });
-        this.runWatchLoop();
+        await this.runWatchLoop();
 
         logger.info(`[AD] c:"${this.getKey()}" attaches d:"${doc.getKey()}"`);
         resolve(doc);
@@ -440,9 +490,7 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
    * the changes should be applied to other replicas before GC time. For this,
    * if the document is no longer used by this client, it should be detached.
    */
-  public detach(
-    doc: DocumentReplica<unknown>,
-  ): Promise<DocumentReplica<unknown>> {
+  public detach(doc: Document<unknown>): Promise<Document<unknown>> {
     if (!this.isActive()) {
       throw new YorkieError(Code.ClientNotActive, `${this.key} is not active`);
     }
@@ -452,7 +500,7 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
       req.setClientId(converter.toUint8Array(this.id!));
       req.setChangePack(converter.toChangePack(doc.createChangePack()));
 
-      this.rpcClient.detachDocument(req, {}, (err, res) => {
+      this.rpcClient.detachDocument(req, {}, async (err, res) => {
         if (err) {
           logger.error(`[DD] c:"${this.getKey()}" err :`, err);
           reject(err);
@@ -465,7 +513,7 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
         if (this.attachmentMap.has(doc.getKey())) {
           this.attachmentMap.delete(doc.getKey());
         }
-        this.runWatchLoop();
+        await this.runWatchLoop();
 
         logger.info(`[DD] c:"${this.getKey()}" detaches d:"${doc.getKey()}"`);
         resolve(doc);
@@ -478,7 +526,7 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
    * receives changes of the remote replica from the server then apply them to
    * local documents.
    */
-  public sync(): Promise<Array<DocumentReplica<unknown>>> {
+  public sync(): Promise<Array<Document<unknown>>> {
     const promises = [];
     for (const [, attachment] of this.attachmentMap) {
       promises.push(this.syncInternal(attachment.doc));
@@ -500,31 +548,53 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
   /**
    * `updatePresence` updates the presence of this client.
    */
-  public updatePresence<K extends keyof M>(key: K, value: M[K]): Promise<void> {
+  public updatePresence<K extends keyof P>(key: K, value: P[K]): Promise<void> {
     if (!this.isActive()) {
       throw new YorkieError(Code.ClientNotActive, `${this.key} is not active`);
     }
 
     this.presenceInfo.clock += 1;
-    (this.presenceInfo.data as any)[key] = value;
+    this.presenceInfo.data[key] = value;
 
     if (this.attachmentMap.size === 0) {
       return Promise.resolve();
     }
 
-    const keys: Array<string> = [];
+    const docKeys: Array<string> = [];
     for (const [, attachment] of this.attachmentMap) {
       if (!attachment.isRealtimeSync) {
         continue;
       }
 
       attachment.peerPresenceMap!.set(this.getID()!, this.presenceInfo);
-      keys.push(attachment.doc.getKey());
+      docKeys.push(attachment.doc.getKey());
     }
 
     const req = new UpdatePresenceRequest();
     req.setClient(converter.toClient(this.id!, this.presenceInfo));
-    req.setDocumentKeysList(keys);
+    req.setDocumentKeysList(docKeys);
+
+    const changedPeers: Record<
+      DocumentKey,
+      Array<{ clientID: ActorID; presence: P }>
+    > = {};
+    for (const key of docKeys) {
+      changedPeers[key] = [
+        {
+          clientID: this.id!,
+          presence: this.getPeerPresence(key, this.id!),
+        },
+      ];
+    }
+    if (this.eventStreamObserver) {
+      this.eventStreamObserver.next({
+        type: ClientEventType.PeersChanged,
+        value: {
+          type: 'presence-changed',
+          peers: changedPeers,
+        },
+      });
+    }
 
     return new Promise((resolve, reject) => {
       this.rpcClient.updatePresence(req, {}, (err) => {
@@ -544,12 +614,12 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
    * `subscribe` subscribes to the given topics.
    */
   public subscribe(
-    nextOrObserver: Observer<ClientEvent<M>> | NextFn<ClientEvent<M>>,
+    nextOrObserver: Observer<ClientEvent<P>> | NextFn<ClientEvent<P>>,
     error?: ErrorFn,
     complete?: CompleteFn,
   ): Unsubscribe {
     return this.eventStream.subscribe(
-      nextOrObserver as NextFn<ClientEvent<M>>,
+      nextOrObserver as NextFn<ClientEvent<P>>,
       error,
       complete,
     );
@@ -586,20 +656,39 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
   /**
    * `getPresence` returns the presence of this client.
    */
-  public getPresence(): M {
+  public getPresence(): P {
     return this.presenceInfo.data;
   }
 
   /**
-   * `getPeers` returns the peers of the given document.
+   * `getPeerPresence` returns the presence of the given document and client.
    */
-  public getPeers(key: string): Record<string, M> {
-    const peers: Record<string, M> = {};
-    const attachment = this.attachmentMap.get(key);
-    for (const [key, value] of attachment!.peerPresenceMap!) {
-      peers[key] = value.data;
+  public getPeerPresence(docKey: DocumentKey, clientID: ActorID): P {
+    return this.attachmentMap.get(docKey)!.peerPresenceMap!.get(clientID)!.data;
+  }
+
+  /**
+   * `getPeersByDocKey` returns the peers of the given document.
+   */
+  public getPeersByDocKey(
+    docKey: DocumentKey,
+  ): Array<{ clientID: ActorID; presence: P }> {
+    const peers: Array<{ clientID: ActorID; presence: P }> = [];
+    const attachment = this.attachmentMap.get(docKey);
+    for (const [clientID, presenceInfo] of attachment!.peerPresenceMap!) {
+      peers.push({ clientID, presence: presenceInfo.data });
     }
     return peers;
+  }
+
+  private getRealtimeSyncDocKeys(): Array<string> {
+    const realtimeSyncDocKeys: Array<string> = [];
+    for (const [, attachment] of this.attachmentMap) {
+      if (attachment.isRealtimeSync) {
+        realtimeSyncDocKeys.push(attachment.doc.getKey());
+      }
+    }
+    return realtimeSyncDocKeys;
   }
 
   private runSyncLoop(): void {
@@ -642,11 +731,10 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
     doLoop();
   }
 
-  private runWatchLoop(): void {
-    const doLoop = (): void => {
+  private async runWatchLoop(): Promise<void> {
+    const doLoop = (): Promise<void> => {
       if (this.remoteChangeEventStream) {
-        this.remoteChangeEventStream.cancel();
-        this.remoteChangeEventStream = undefined;
+        this.disconnectWatchStream();
       }
 
       if (this.watchLoopTimerID) {
@@ -656,71 +744,59 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
 
       if (!this.isActive()) {
         logger.debug(`[WL] c:"${this.getKey()}" exit watch loop`);
-        return;
+        return Promise.resolve();
       }
 
-      const realtimeSyncDocKeys: Array<string> = [];
-      for (const [, attachment] of this.attachmentMap) {
-        if (attachment.isRealtimeSync) {
-          realtimeSyncDocKeys.push(attachment.doc.getKey());
-        }
-      }
-
+      const realtimeSyncDocKeys = this.getRealtimeSyncDocKeys();
       if (!realtimeSyncDocKeys.length) {
         logger.debug(`[WL] c:"${this.getKey()}" exit watch loop`);
-        return;
+        return Promise.resolve();
       }
 
       const req = new WatchDocumentsRequest();
       req.setClient(converter.toClient(this.id!, this.presenceInfo));
       req.setDocumentKeysList(realtimeSyncDocKeys);
 
-      const onStreamDisconnect = () => {
-        this.remoteChangeEventStream = undefined;
-        this.watchLoopTimerID = setTimeout(doLoop, this.reconnectStreamDelay);
+      return new Promise((resolve, reject) => {
+        const onStreamDisconnect = () => {
+          this.remoteChangeEventStream = undefined;
+          this.watchLoopTimerID = setTimeout(doLoop, this.reconnectStreamDelay);
+          this.eventStreamObserver.next({
+            type: ClientEventType.StreamConnectionStatusChanged,
+            value: StreamConnectionStatus.Disconnected,
+          });
+          logger.debug(`[WD] c:"${this.getKey()}" unwatches`);
+          reject();
+        };
+
+        const stream = this.rpcClient.watchDocuments(req, {});
+        stream.on('data', (resp: WatchDocumentsResponse) => {
+          this.handleWatchDocumentsResponse(realtimeSyncDocKeys, resp);
+          resolve();
+        });
+        stream.on('end', onStreamDisconnect);
+        stream.on('error', onStreamDisconnect);
+        this.remoteChangeEventStream = stream;
         this.eventStreamObserver.next({
           type: ClientEventType.StreamConnectionStatusChanged,
-          value: StreamConnectionStatus.Disconnected,
+          value: StreamConnectionStatus.Connected,
         });
-      };
 
-      const stream = this.rpcClient.watchDocuments(req, {});
-      stream.on('data', (resp: WatchDocumentsResponse) => {
-        this.handleWatchDocumentsResponse(realtimeSyncDocKeys, resp);
+        logger.info(
+          `[WD] c:"${this.getKey()}" watches d:"${realtimeSyncDocKeys}"`,
+        );
       });
-      stream.on('end', onStreamDisconnect);
-      stream.on('error', onStreamDisconnect);
-      this.remoteChangeEventStream = stream;
-
-      logger.info(
-        `[WD] c:"${this.getKey()}" watches d:"${realtimeSyncDocKeys.map(
-          (key) => key,
-        )}"`,
-      );
     };
 
     logger.debug(`[WL] c:"${this.getKey()}" run watch loop`);
 
-    doLoop();
+    await doLoop();
   }
 
   private handleWatchDocumentsResponse(
     keys: Array<string>,
     resp: WatchDocumentsResponse,
   ) {
-    const getPeers = (
-      peersMap: Record<string, Record<string, M>>,
-      key: string,
-    ) => {
-      const attachment = this.attachmentMap.get(key);
-      const peers: Record<string, M> = {};
-      for (const [key, value] of attachment!.peerPresenceMap!) {
-        peers[key] = value.data;
-      }
-      peersMap[key] = peers;
-      return peersMap;
-    };
-
     if (resp.hasInitialization()) {
       const pbPeersMap = resp.getInitialization()!.getPeersMapByDocMap();
       pbPeersMap.forEach((pbPeers, docID) => {
@@ -733,66 +809,118 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
         }
       });
 
+      const peers: Record<
+        DocumentKey,
+        Array<{ clientID: ActorID; presence: P }>
+      > = {};
+      for (const key of keys) {
+        peers[key] = this.getPeersByDocKey(key);
+      }
       this.eventStreamObserver.next({
         type: ClientEventType.PeersChanged,
-        value: keys.reduce(getPeers, {}),
+        value: {
+          type: 'initialized',
+          peers,
+        },
       });
       return;
     }
 
     const pbWatchEvent = resp.getEvent()!;
-    const respKeys = pbWatchEvent.getDocumentKeysList();
+    const respDocKeys = pbWatchEvent.getDocumentKeysList();
+    // TODO(chacha912): Change the docKey of DocEvent to a single key value
+    // instead of an array
+    const docKey = respDocKeys[0];
+    const eventType = pbWatchEvent.getType();
     const publisher = converter.toHexString(
       pbWatchEvent.getPublisher()!.getId_asU8(),
     );
-    const presence = converter.fromPresence<M>(
+    const presence = converter.fromPresence<P>(
       pbWatchEvent.getPublisher()!.getPresence()!,
     );
-    for (const key of respKeys) {
-      const attachment = this.attachmentMap.get(key)!;
-      const peerPresenceMap = attachment.peerPresenceMap!;
-      switch (pbWatchEvent.getType()) {
-        case DocEventType.DOCUMENTS_WATCHED:
-          peerPresenceMap!.set(publisher, presence);
-          break;
-        case DocEventType.DOCUMENTS_UNWATCHED:
-          peerPresenceMap!.delete(publisher);
-          break;
-        case DocEventType.DOCUMENTS_CHANGED:
-          attachment.remoteChangeEventReceived = true;
-          break;
-        case DocEventType.PRESENCE_CHANGED:
-          if (
-            peerPresenceMap!.has(publisher) &&
-            peerPresenceMap!.get(publisher)!.clock > presence.clock
-          ) {
-            break;
-          }
-          peerPresenceMap!.set(publisher, presence);
-          break;
+    const attachment = this.attachmentMap.get(docKey)!;
+    const peerPresenceMap = attachment.peerPresenceMap!;
+    switch (eventType) {
+      case DocEventType.DOC_EVENT_TYPE_DOCUMENTS_CHANGED:
+        attachment.remoteChangeEventReceived = true;
+        this.eventStreamObserver.next({
+          type: ClientEventType.DocumentsChanged,
+          value: respDocKeys,
+        });
+        break;
+      case DocEventType.DOC_EVENT_TYPE_DOCUMENTS_WATCHED:
+        peerPresenceMap!.set(publisher, presence);
+        this.eventStreamObserver.next({
+          type: ClientEventType.PeersChanged,
+          value: {
+            type: 'watched',
+            peers: {
+              [docKey]: [
+                {
+                  clientID: publisher,
+                  presence: this.getPeerPresence(docKey, publisher),
+                },
+              ],
+            },
+          },
+        });
+        break;
+      case DocEventType.DOC_EVENT_TYPE_DOCUMENTS_UNWATCHED: {
+        const presence = this.getPeerPresence(docKey, publisher);
+        peerPresenceMap!.delete(publisher);
+        this.eventStreamObserver.next({
+          type: ClientEventType.PeersChanged,
+          value: {
+            type: 'unwatched',
+            peers: {
+              [docKey]: [
+                {
+                  clientID: publisher,
+                  presence,
+                },
+              ],
+            },
+          },
+        });
+        break;
       }
-    }
-
-    if (pbWatchEvent!.getType() === DocEventType.DOCUMENTS_CHANGED) {
-      this.eventStreamObserver.next({
-        type: ClientEventType.DocumentsChanged,
-        value: respKeys,
-      });
-    } else if (
-      pbWatchEvent!.getType() === DocEventType.DOCUMENTS_WATCHED ||
-      pbWatchEvent!.getType() === DocEventType.DOCUMENTS_UNWATCHED ||
-      pbWatchEvent!.getType() === DocEventType.PRESENCE_CHANGED
-    ) {
-      this.eventStreamObserver.next({
-        type: ClientEventType.PeersChanged,
-        value: respKeys.reduce(getPeers, {}),
-      });
+      case DocEventType.DOC_EVENT_TYPE_PRESENCE_CHANGED:
+        if (
+          peerPresenceMap!.has(publisher) &&
+          peerPresenceMap!.get(publisher)!.clock > presence.clock
+        ) {
+          break;
+        }
+        peerPresenceMap!.set(publisher, presence);
+        this.eventStreamObserver.next({
+          type: ClientEventType.PeersChanged,
+          value: {
+            type: 'presence-changed',
+            peers: {
+              [docKey]: [
+                {
+                  clientID: publisher,
+                  presence: this.getPeerPresence(docKey, publisher),
+                },
+              ],
+            },
+          },
+        });
+        break;
     }
   }
 
-  private syncInternal(
-    doc: DocumentReplica<unknown>,
-  ): Promise<DocumentReplica<unknown>> {
+  private disconnectWatchStream() {
+    this.remoteChangeEventStream.cancel();
+    logger.debug(`[WD] c:"${this.getKey()}" unwatches`);
+
+    this.remoteChangeEventStream = undefined;
+    this.eventStreamObserver.next({
+      type: ClientEventType.StreamConnectionStatusChanged,
+      value: StreamConnectionStatus.Disconnected,
+    });
+  }
+  private syncInternal(doc: Document<unknown>): Promise<Document<unknown>> {
     return new Promise((resolve, reject) => {
       const req = new PushPullRequest();
       req.setClientId(converter.toUint8Array(this.id!));
@@ -823,7 +951,7 @@ export class Client<M = Indexable> implements Observable<ClientEvent<M>> {
           logger.info(
             `[PP] c:"${this.getKey()}" sync d:"${docKey}", push:${localSize} pull:${remoteSize} cp:${respPack
               .getCheckpoint()
-              .getAnnotatedString()}`,
+              .getStructureAsString()}`,
           );
         })
         .on('end', () => {

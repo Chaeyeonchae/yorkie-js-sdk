@@ -7,6 +7,167 @@ and Yorkie JS SDK adheres to [Semantic Versioning](https://semver.org/spec/v2.0.
 
 ## [Unreleased]
 
+## [0.3.2] - 2023-02-27
+
+### Fixed
+* Fix ValueChange dependency by @krapie in https://github.com/yorkie-team/yorkie-js-sdk/pull/470
+
+## [0.3.1] - 2023-02-27
+
+### Added
+* Add `delete` and `empty` method to `Text` data type by @cozitive in https://github.com/yorkie-team/yorkie-js-sdk/pull/454
+
+### Changed
+* Reduce bundle size for production by @easylogic in https://github.com/yorkie-team/yorkie-js-sdk/pull/460
+* Remove string dependency of RGATreeSplit value by @cozitive in https://github.com/yorkie-team/yorkie-js-sdk/pull/459
+* Remove priority queue from RHTPQMap and entire project by @blurfx in https://github.com/yorkie-team/yorkie-js-sdk/pull/462
+* Modify config to run the webpack-bundle-analyzer when using `profile:bundle` script by @chacha912 in https://github.com/yorkie-team/yorkie-js-sdk/pull/468
+
+### Fixed
+* Fix invalid indexOf SplayTree with single node by @chacha912 in https://github.com/yorkie-team/yorkie-js-sdk/pull/463
+
+## [0.3.0] - 2023-01-31
+
+### Changed
+- Merge Text and RichText by @chacha912 in https://github.com/yorkie-team/yorkie-js-sdk/pull/425
+- Fix the value type of Counter and remove double type from Counter by @cozitive in https://github.com/yorkie-team/yorkie-js-sdk/pull/426
+- Let Client.attach wait until stream initialization is finished by @cozitive in https://github.com/yorkie-team/yorkie-js-sdk/pull/440
+- Add the toJS method to the ObjectProxy's handler by @chacha912 in https://github.com/yorkie-team/yorkie-js-sdk/pull/449
+
+### Fixed
+- Increase CRDT Counter in local change by @chacha912 in https://github.com/yorkie-team/yorkie-js-sdk/pull/441
+
+## [0.2.20] - 2022-12-30
+
+### Added
+
+- Add benchmark tests by @parkeunae in #358, #359
+- Add CodeMirror6 integration example by @blurfx in #394
+- Add vuejs-kanban example by @hackerwins in #399
+- Add profile-stack example by @chacha912 #414
+
+### Changed
+
+- Bump socket.io-parser from 4.0.4 to 4.0.5 by @dependabot in #403
+- Bump engine.io and socket.io by @dependabot in #407
+- Bump express from 4.17.1 to 4.18.2 by @dependabot in #411
+- Bump minimatch from 3.0.4 to 3.1.2 by @dependabot in #412
+
+### Fixed
+
+- Fix issues identified during iOS SDK development by @hackerwins in #398
+- Use uint64 for date value by @hackerwins in #408
+
+## [0.2.19] - 2022-10-04
+
+### Changed
+
+- Rename keyOf to subPathOf: #391
+
+### Fixed
+
+- Remove unused nodeMapByCreatedAt in RHT: #386
+- Change lamport from uint64 to int64: #390
+
+## [0.2.16] - 2022-08-16
+
+### Changed
+
+- Apply generics to support any types of properties in RichText: #354
+
+### Fixed
+
+- Send peers-changed event to the user who updated one's own presence: #371
+- Fix the error that occurs when importing JS SDK in Next.js: #378
+
+## [0.2.15] - 2022-08-08
+
+### Added
+
+- Add snapshot event observer to Quill example: #365
+
+### Changed
+
+- Bump up proto files to the latest: #367
+- Export Change APIs to generate history snapshots in admin: #368
+- Change trie traverse parameter name to isTerminalIncluded: #363
+
+## [0.2.14] - 2022-08-03
+
+### Added
+
+- Reduce the number of paths of change events: #351
+
+### Fixed
+
+- Fix the problem local changes were applied twice: #356
+- Update CodeMirror example to handle snapshot events: #360
+
+## [0.2.13] - 2022-07-27
+
+### Added
+
+- Support Quill embeds type to example project: #344
+
+### Fixed
+
+- Fix a bug when overwriting in Object: #349
+
+## [0.2.12] - 2022-07-20
+
+### Fixed
+
+- Fix incorrect index for nodes newly created then concurrently removed: #334
+- Fix initial value bug in counter proxy: #333
+
+## [0.2.11] - 2022-07-14
+
+### Fixed
+
+- Escape string to return valid json: #330
+
+## [0.2.10] - 2022-07-06
+
+### Added
+
+- Implement array methods with objects: #327
+
+### Changed
+
+- Improve performance deletion in Text: #326
+
+### Fixed
+
+- Fix a bug when deleting blocks concurrently: #328
+
+## [0.2.9] - 2022-06-30
+
+### Changed
+
+- Implement inserting elements with splice() method: #318
+
+### Fixed
+
+- Revert text deletion improvements: #323
+
+## [0.2.8] - 2022-06-22
+
+### Added
+
+- Add read-only Array methods to ArrayProxy: #310
+- Add Array.splice to ArrayProxy: #317
+
+### Changed
+
+- Use types more strictly in Document.update: #314
+- Revert Document and Text: #47478e7
+- Improve performance deletion in Text: #312, #316
+
+### Fixed
+
+- Remove size cache from RGATreeList and use SplayTree instead: #315
+- Fix bug when setting non-string values in Presence: #311
+
 ## [0.2.7] - 2022-05-25
 
 ### Fixed

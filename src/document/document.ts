@@ -33,15 +33,16 @@ import {
 import { ChangeContext } from '@yorkie-js-sdk/src/document/change/context';
 import { converter } from '@yorkie-js-sdk/src/api/converter';
 import { ChangePack } from '@yorkie-js-sdk/src/document/change/change_pack';
-import { JSONRoot } from '@yorkie-js-sdk/src/document/json/root';
-import { ObjectInternal } from '@yorkie-js-sdk/src/document/json/object';
-import { createProxy } from '@yorkie-js-sdk/src/document/proxy/proxy';
+import { CRDTRoot } from '@yorkie-js-sdk/src/document/crdt/root';
+import { CRDTObject } from '@yorkie-js-sdk/src/document/crdt/object';
+import { createJSON } from '@yorkie-js-sdk/src/document/json/element';
 import {
   Checkpoint,
   InitialCheckpoint,
 } from '@yorkie-js-sdk/src/document/change/checkpoint';
 import { TimeTicket } from '@yorkie-js-sdk/src/document/time/ticket';
-import { JSONObject } from './proxy/object_proxy';
+import { JSONObject } from './json/object';
+import { Trie } from '../util/trie';
 
 /**
  * `DocEventType` is document event types
@@ -63,8 +64,8 @@ export enum DocEventType {
 }
 
 /**
- * `DocEvent` is an event that occurs in `DocumentReplica`. It can be delivered
- * using `DocumentReplica.subscribe()`.
+ * `DocEvent` is an event that occurs in `Document`. It can be delivered
+ * using `Document.subscribe()`.
  *
  * @public
  */
@@ -144,15 +145,21 @@ export interface RemoteChangeEvent extends BaseDocEvent {
 export type Indexable = Record<string, any>;
 
 /**
- * `DocumentReplica` is a CRDT-based data type. We can representing the model
- * of the application. And we can edit it even while offline.
+ * Document key type
+ * @public
+ */
+export type DocumentKey = string;
+
+/**
+ * `Document` is a CRDT-based data type. We can represent the model
+ * of the application and edit it even while offline.
  *
  * @public
  */
-export class DocumentReplica<T = Indexable> implements Observable<DocEvent> {
-  private key: string;
-  private root: JSONRoot;
-  private clone?: JSONRoot;
+export class Document<T> implements Observable<DocEvent> {
+  private key: DocumentKey;
+  private root: CRDTRoot;
+  private clone?: CRDTRoot;
   private changeID: ChangeID;
   private checkpoint: Checkpoint;
   private localChanges: Array<Change>;
@@ -161,7 +168,7 @@ export class DocumentReplica<T = Indexable> implements Observable<DocEvent> {
 
   constructor(key: string) {
     this.key = key;
-    this.root = JSONRoot.create();
+    this.root = CRDTRoot.create();
     this.changeID = InitialChangeID;
     this.checkpoint = InitialCheckpoint;
     this.localChanges = [];
@@ -173,8 +180,8 @@ export class DocumentReplica<T = Indexable> implements Observable<DocEvent> {
   /**
    * `create` creates a new instance of Document.
    */
-  public static create<T>(key: string): DocumentReplica<T> {
-    return new DocumentReplica<T>(key);
+  public static create<T>(key: string): Document<T> {
+    return new Document<T>(key);
   }
 
   /**
@@ -192,10 +199,7 @@ export class DocumentReplica<T = Indexable> implements Observable<DocEvent> {
     );
 
     try {
-      const proxy = createProxy<JSONObject<T>>(
-        context,
-        this.clone!.getObject(),
-      );
+      const proxy = createJSON<JSONObject<T>>(context, this.clone!.getObject());
       updater(proxy);
     } catch (err) {
       // drop clone because it is contaminated.
@@ -354,7 +358,7 @@ export class DocumentReplica<T = Indexable> implements Observable<DocEvent> {
    *
    * @internal
    */
-  public getClone(): ObjectInternal | undefined {
+  public getClone(): CRDTObject | undefined {
     if (!this.clone) {
       return;
     }
@@ -365,11 +369,11 @@ export class DocumentReplica<T = Indexable> implements Observable<DocEvent> {
   /**
    * `getRoot` returns a new proxy of cloned root.
    */
-  public getRoot(): T {
+  public getRoot(): JSONObject<T> {
     this.ensureClone();
 
     const context = ChangeContext.create(this.changeID.next(), this.clone!);
-    return createProxy<T>(context, this.clone!.getObject());
+    return createJSON<T>(context, this.clone!.getObject());
   }
 
   /**
@@ -389,7 +393,7 @@ export class DocumentReplica<T = Indexable> implements Observable<DocEvent> {
    *
    * @internal
    */
-  public getRootObject(): ObjectInternal {
+  public getRootObject(): CRDTObject {
     return this.root.getObject();
   }
 
@@ -403,26 +407,25 @@ export class DocumentReplica<T = Indexable> implements Observable<DocEvent> {
   }
 
   /**
-   * `toJSON` returns the JSON encoding of this array.
+   * `toJSON` returns the JSON encoding of this document.
    */
   public toJSON(): string {
     return this.root.toJSON();
   }
 
   /**
-   * `toJSON` returns the sorted JSON encoding of this array.
+   * `toSortedJSON` returns the sorted JSON encoding of this document.
    */
   public toSortedJSON(): string {
     return this.root.toSortedJSON();
   }
 
-  private applySnapshot(serverSeq: Long, snapshot?: Uint8Array): void {
+  /**
+   * `applySnapshot` applies the given snapshot into this document.
+   */
+  public applySnapshot(serverSeq: Long, snapshot?: Uint8Array): void {
     const obj = converter.bytesToObject(snapshot);
-    this.root = new JSONRoot(obj);
-
-    for (const change of this.localChanges) {
-      change.execute(this.root);
-    }
+    this.root = new CRDTRoot(obj);
     this.changeID = this.changeID.syncLamport(serverSeq);
 
     // drop clone because it is contaminated.
@@ -436,7 +439,10 @@ export class DocumentReplica<T = Indexable> implements Observable<DocEvent> {
     }
   }
 
-  private applyChanges(changes: Array<Change>): void {
+  /**
+   * `applyChanges` applies the given changes into this document.
+   */
+  public applyChanges(changes: Array<Change>): void {
     if (logger.isEnabled(LogLevel.Debug)) {
       logger.debug(
         `trying to apply ${changes.length} remote changes.` +
@@ -451,7 +457,7 @@ export class DocumentReplica<T = Indexable> implements Observable<DocEvent> {
             (change) =>
               `${change
                 .getID()
-                .getAnnotatedString()}\t${change.getAnnotatedString()}`,
+                .getStructureAsString()}\t${change.getStructureAsString()}`,
           )
           .join('\n'),
       );
@@ -489,13 +495,15 @@ export class DocumentReplica<T = Indexable> implements Observable<DocEvent> {
   }
 
   private createPaths(change: Change): Array<string> {
-    const paths: Array<string> = [];
+    const pathTrie = new Trie<string>('$');
     for (const op of change.getOperations()) {
       const createdAt = op.getEffectedCreatedAt();
       if (createdAt) {
-        paths.push(this.root.createPath(createdAt)!);
+        const subPaths = this.root.createSubPaths(createdAt)!;
+        subPaths.shift();
+        pathTrie.insert(subPaths);
       }
     }
-    return paths;
+    return pathTrie.findPrefixes().map((element) => element.join('.'));
   }
 }

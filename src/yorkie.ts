@@ -15,10 +15,10 @@
  */
 
 import { Client } from '@yorkie-js-sdk/src/core/client';
-import { DocumentReplica } from '@yorkie-js-sdk/src/document/document';
-import { PlainText } from '@yorkie-js-sdk/src/document/proxy/text_proxy';
-import { RichText } from '@yorkie-js-sdk/src/document/proxy/rich_text_proxy';
-import { Counter } from '@yorkie-js-sdk/src/document/proxy/counter_proxy';
+import { Document } from '@yorkie-js-sdk/src/document/document';
+import { Text } from '@yorkie-js-sdk/src/document/json/text';
+import { Counter } from '@yorkie-js-sdk/src/document/json/counter';
+import { CounterType } from '@yorkie-js-sdk/src/document/crdt/counter';
 
 export {
   Client,
@@ -42,7 +42,7 @@ export {
   RemoteChangeEvent,
   Indexable,
   DocEvent,
-  DocumentReplica,
+  Document,
 } from '@yorkie-js-sdk/src/document/document';
 export {
   Observer,
@@ -57,13 +57,26 @@ export { ActorID } from '@yorkie-js-sdk/src/document/time/actor_id';
 export {
   TextChange,
   TextChangeType,
-} from '@yorkie-js-sdk/src/document/json/rga_tree_split';
-export { JSONElement } from '@yorkie-js-sdk/src/document/json/element';
-export { JSONArray } from '@yorkie-js-sdk/src/document/proxy/array_proxy';
-export { Counter } from '@yorkie-js-sdk/src/document/proxy/counter_proxy';
-export { JSONObject } from '@yorkie-js-sdk/src/document/proxy/object_proxy';
-export { RichText } from '@yorkie-js-sdk/src/document/proxy/rich_text_proxy';
-export { PlainText } from '@yorkie-js-sdk/src/document/proxy/text_proxy';
+} from '@yorkie-js-sdk/src/document/crdt/text';
+
+// TODO(hackerwins): ValueChange is missing in TextChange in the index.d.ts file
+// if not exported. We need to find a way to handle this without exporting the below.
+export { ValueChange } from '@yorkie-js-sdk/src/document/crdt/rga_tree_split';
+
+export {
+  Primitive,
+  PrimitiveValue,
+} from '@yorkie-js-sdk/src/document/crdt/primitive';
+export {
+  WrappedElement,
+  JSONElement,
+} from '@yorkie-js-sdk/src/document/json/element';
+export { JSONObject } from '@yorkie-js-sdk/src/document/json/object';
+export { JSONArray } from '@yorkie-js-sdk/src/document/json/array';
+export { Counter } from '@yorkie-js-sdk/src/document/json/counter';
+export { Text } from '@yorkie-js-sdk/src/document/json/text';
+export { Change } from '@yorkie-js-sdk/src/document/change/change';
+export { converter } from '@yorkie-js-sdk/src/api/converter';
 
 /**
  * The top-level yorkie namespace with additional properties.
@@ -77,10 +90,11 @@ export { PlainText } from '@yorkie-js-sdk/src/document/proxy/text_proxy';
  */
 const yorkie = {
   Client,
-  Document: DocumentReplica,
-  Text: PlainText,
-  RichText,
+  Document,
+  Text,
   Counter,
+  IntType: CounterType.IntegerCnt,
+  LongType: CounterType.LongCnt,
 };
 
 export default yorkie;

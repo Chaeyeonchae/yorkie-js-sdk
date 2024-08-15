@@ -1,10 +1,11 @@
 import { assert } from 'chai';
-import { DocumentReplica } from '@yorkie-js-sdk/src/document/document';
+import { JSONObject } from '@yorkie-js-sdk/src/yorkie';
+import { DocEventType, Document } from '@yorkie-js-sdk/src/document/document';
 import { withTwoClientsAndDocuments } from '@yorkie-js-sdk/test/integration/integration_helper';
 
 describe('Object', function () {
   it('should apply updates inside nested map', function () {
-    const doc = DocumentReplica.create<{
+    const doc = Document.create<{
       k1: { 'k1-1'?: string; 'k1-2'?: string };
       k2: Array<string | { 'k2-5': string }>;
     }>('test-doc');
@@ -59,7 +60,7 @@ describe('Object', function () {
   });
 
   it('should handle delete operations', function () {
-    const doc = DocumentReplica.create<{
+    const doc = Document.create<{
       k1: { 'k1-1'?: string; 'k1-2': string; 'k1-3'?: string };
     }>('test-doc');
     assert.equal('{}', doc.toSortedJSON());
@@ -76,8 +77,24 @@ describe('Object', function () {
     assert.equal('{"k1":{"k1-2":"v2","k1-3":"v4"}}', doc.toSortedJSON());
   });
 
+  it('should support toJS and toJSON methods', function () {
+    const doc = Document.create<{
+      content: JSONObject<{ a: number; b: number; c: number }>;
+    }>('test-doc');
+    doc.update((root) => {
+      root.content = { a: 1, b: 2, c: 3 };
+    }, 'set a, b, c');
+    assert.equal(doc.toSortedJSON(), '{"content":{"a":1,"b":2,"c":3}}');
+
+    const root = doc.getRoot();
+    assert.equal(root.toJSON!(), '{"content":{"a":1,"b":2,"c":3}}');
+    assert.deepEqual(root.toJS!(), { content: { a: 1, b: 2, c: 3 } });
+    assert.equal(root.content.toJSON!(), '{"a":1,"b":2,"c":3}');
+    assert.deepEqual(root.content.toJS!(), { a: 1, b: 2, c: 3 });
+  });
+
   it('Object.keys, Object.values and Object.entries test', function () {
-    const doc = DocumentReplica.create<{
+    const doc = Document.create<{
       content: { a: number; b: number; c: number };
     }>('test-doc');
     assert.equal('{}', doc.toSortedJSON());
@@ -150,6 +167,57 @@ describe('Object', function () {
       await c2.sync();
       await c1.sync();
       assert.equal(d1.toSortedJSON(), d2.toSortedJSON());
+    }, this.test!.title);
+  });
+
+  it('should show a reduced version of paths in cases when a nested object is instantiated', async function () {
+    await withTwoClientsAndDocuments<{
+      k1: {
+        id: string;
+        selected: boolean;
+        test: string;
+        layers: Array<{ a: string; b: string }>;
+      };
+      k2: number;
+    }>(async (c1, d1, c2, d2) => {
+      // TODO(hackerwins): consider replacing the below code with `createEmitterAndSpy`.
+      d2.subscribe((event) => {
+        if (event.type === DocEventType.RemoteChange) {
+          assert.deepEqual(event.value[0].paths.sort(), ['$.k1', '$.k2']);
+        }
+      });
+      d1.subscribe((event) => {
+        if (event.type === DocEventType.RemoteChange) {
+          assert.deepEqual(event.value[0].paths, [
+            '$.k1.selected',
+            '$.k1.layers.0.a',
+            '$.k2',
+          ]);
+        }
+      });
+      d1.update((root) => {
+        root['k1'] = {
+          id: 'id7fb51ad',
+          selected: false,
+          test: 'hi',
+          layers: [{ a: 'hi', b: 'bhi' }],
+        };
+        root['k1']['selected'] = true;
+        root['k1']['test'] = 'change';
+        root['k2'] = 5;
+      });
+
+      await c1.sync();
+      await c2.sync();
+      await c1.sync();
+      d2.update((root) => {
+        root['k1']['selected'] = false;
+        root['k1']['layers'][0]['a'] = 'hi2';
+        root['k2']++;
+      });
+      await c1.sync();
+      await c2.sync();
+      await c1.sync();
     }, this.test!.title);
   });
 });

@@ -50,8 +50,8 @@ export class Checkpoint {
   }
 
   /**
-   * `forward` updates the given checkpoint with those values when it is greater
-   * than the values of internal properties.
+   * `forward` creates a new instance with the given checkpoint if it is
+   * greater than the values of internal properties.
    */
   public forward(other: Checkpoint): Checkpoint {
     if (this.equals(other)) {
@@ -99,10 +99,10 @@ export class Checkpoint {
   }
 
   /**
-   * `getAnnotatedString` returns a string containing the meta data of this
+   * `getStructureAsString` returns a string containing the meta data of this
    * checkpoint.
    */
-  public getAnnotatedString(): string {
+  public getStructureAsString(): string {
     return `serverSeq=${this.serverSeq}, clientSeq=${this.clientSeq}`;
   }
 }

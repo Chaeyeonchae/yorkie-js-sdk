@@ -69,10 +69,10 @@ export class TimeTicket {
   }
 
   /**
-   * `getAnnotatedString` returns a string containing the meta data of the ticket
+   * `getStructureAsString` returns a string containing the meta data of the ticket
    * for debugging purpose.
    */
-  public getAnnotatedString(): string {
+  public getStructureAsString(): string {
     if (!this.actorID) {
       return `${this.lamport.toString()}:nil:${this.delimiter}`;
     }
@@ -151,11 +151,11 @@ export class TimeTicket {
 }
 
 export const InitialDelimiter = 0;
-export const MaxDelemiter = 4294967295;
-export const MaxLamport = Long.fromString('18446744073709551615', true);
+export const MaxDelemiter = 4294967295; // UInt32 MAX_VALUE
+export const MaxLamport = Long.MAX_VALUE;
 
 export const InitialTimeTicket = new TimeTicket(
-  Long.fromNumber(0, true),
+  Long.fromNumber(0),
   InitialDelimiter,
   InitialActorID,
 );
